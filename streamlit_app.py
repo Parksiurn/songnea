@@ -69,7 +69,7 @@ with tab1:
                 model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}]
             )
-            st.markdown("### 💡 박선준준:")
+            st.markdown("### 💡 박선준:")
             st.success(completion.choices[0].message.content)
 
 # ──────────────────────────────
