@@ -3,181 +3,147 @@ import random
 import pandas as pd
 from collections import deque
 
-# 카드 생성
-def create_deck(num_decks=8):
-    single_deck = [1,2,3,4,5,6,7,8,9,0,0,0,0] * 4
-    return deque(random.sample(single_deck * num_decks, len(single_deck) * num_decks))
+# 카드 덱 초기화 (8덱 기준)
+def init_deck(num_decks=8):
+    deck = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'] * 4 * num_decks
+    random.shuffle(deck)
+    return deque(deck)
 
-# 카드 합 계산
-def calc_hand_value(hand):
-    return sum(hand) % 10
+# 카드 점수 계산
+def card_value(card):
+    if card in ['10', 'J', 'Q', 'K']:
+        return 0
+    elif card == 'A':
+        return 1
+    else:
+        return int(card)
+
+# 두 장 합산 후 일의 자리만 남기기
+def hand_total(cards):
+    return sum(card_value(c) for c in cards) % 10
 
 # 카드 뽑기
-def draw_card(deck):
+def draw(deck):
     return deck.popleft()
 
-# 플레이어 추가 카드 규칙
-def player_draw_rule(hand):
-    total = calc_hand_value(hand)
-    return total <= 5
-
-# 뱅커 추가 카드 규칙
-def banker_draw_rule(banker_hand, player_third):
-    total = calc_hand_value(banker_hand)
-    if total <= 2:
-        return True
-    elif total == 3:
-        return player_third != 8
-    elif total == 4:
-        return player_third in [2,3,4,5,6,7]
-    elif total == 5:
-        return player_third in [4,5,6,7]
-    elif total == 6:
-        return player_third in [6,7]
-    return False
-
-# AI 베팅 결정
-def ai_bets(last_result, pair_limit=0.1):
-    bets = []
-    for _ in range(500):
-        bet = {}
-        rand = random.random()
-        if last_result == 'Player':
-            bet['main'] = 'Player' if rand < 0.6 else 'Banker'
-        elif last_result == 'Banker':
-            bet['main'] = 'Banker' if rand < 0.6 else 'Player'
-        else:
-            bet['main'] = 'Player' if rand < 0.5 else 'Banker'
-
-        # Tie와 Pair는 제한적
-        bet['tie'] = random.random() < 0.05
-        if random.random() < pair_limit:
-            bet['player_pair'] = random.choice([True, False])
-            bet['banker_pair'] = not bet['player_pair']
-        else:
-            bet['player_pair'] = False
-            bet['banker_pair'] = False
-
-        bets.append(bet)
-    return bets
-
-# 베팅 정산
-def settle_bet(bet, result, player_pair, banker_pair):
-    payout = 0
-    if bet.get('main') == result:
-        payout += 2
-        if result == "Banker":
-            payout -= 0.05
-    if bet.get('tie') and result == "Tie":
-        payout += 8
-    if bet.get('player_pair') and player_pair:
-        payout += 11
-    if bet.get('banker_pair') and banker_pair:
-        payout += 11
-    return payout
-
-# 게임 실행
-def play_round(deck, user_bet, ai_bet_list, ai_profits, last_result):
+# 게임 한 라운드 시뮬레이션
+def simulate_round(deck):
     if len(deck) < 6:
-        return None
+        return None  # 카드 부족 시 종료
 
-    player_hand = [draw_card(deck), draw_card(deck)]
-    banker_hand = [draw_card(deck), draw_card(deck)]
+    player = [draw(deck), draw(deck)]
+    banker = [draw(deck), draw(deck)]
 
-    player_pair = player_hand[0] == player_hand[1]
-    banker_pair = banker_hand[0] == banker_hand[1]
+    pt = hand_total(player)
+    bt = hand_total(banker)
 
-    if player_draw_rule(player_hand):
-        player_third = draw_card(deck)
-        player_hand.append(player_third)
-    else:
-        player_third = None
+    player_third = None
+    banker_third = None
 
-    if player_third is not None:
-        if banker_draw_rule(banker_hand, player_third):
-            banker_hand.append(draw_card(deck))
-    else:
-        if calc_hand_value(banker_hand) <= 5:
-            banker_hand.append(draw_card(deck))
+    # Player 규칙
+    if pt <= 5:
+        player_third = draw(deck)
+        player.append(player_third)
 
-    player_total = calc_hand_value(player_hand)
-    banker_total = calc_hand_value(banker_hand)
+    # Banker 규칙 (간략화, 정확한 룰 필요시 확장 가능)
+    bt = hand_total(banker)
+    if pt >= 0 and pt <= 7:
+        if bt <= 2:
+            banker_third = draw(deck)
+            banker.append(banker_third)
 
-    if player_total > banker_total:
-        result = "Player"
-    elif player_total < banker_total:
-        result = "Banker"
-    else:
-        result = "Tie"
+    final_pt = hand_total(player)
+    final_bt = hand_total(banker)
 
-    # AI 정산
-    for i, bet in enumerate(ai_bet_list):
-        profit = settle_bet(bet, result, player_pair, banker_pair) - 1
-        ai_profits[i] += profit
+    winner = 'Tie' if final_pt == final_bt else 'Player' if final_pt > final_bt else 'Banker'
 
-    # 사용자 정산
-    user_profit = settle_bet(user_bet, result, player_pair, banker_pair) - 1
-
-    round_result = {
-        "Player": player_hand,
-        "Banker": banker_hand,
-        "승자": result,
-        "Player Pair": player_pair,
-        "Banker Pair": banker_pair,
-        "User 수익": user_profit,
+    return {
+        'player': player,
+        'banker': banker,
+        'winner': winner,
+        'player_total': final_pt,
+        'banker_total': final_bt,
+        'pair_player': player[0] == player[1],
+        'pair_banker': banker[0] == banker[1]
     }
 
-    return round_result, result
+# 초기 자본 설정
+USER_INITIAL = 2_000_000
+AI_INITIAL = 2_000_000
+NUM_AI = 500
 
-# Streamlit 앱
-st.title("바카라 게임 시뮬레이터")
+st.title("바카라 시뮬레이터")
 
-# 초기화
 if 'deck' not in st.session_state:
-    st.session_state.deck = create_deck()
-    st.session_state.history = []
-    st.session_state.last_result = None
-    st.session_state.user_money = 200
-    st.session_state.ai_profits = [0 for _ in range(500)]
+    st.session_state.deck = init_deck()
+    st.session_state.user_money = USER_INITIAL
+    st.session_state.ai_money = [AI_INITIAL] * NUM_AI
+    st.session_state.logs = []
 
-st.subheader(f"당신의 보유금: {st.session_state.user_money:.0f}만원")
+# 사용자 베팅 입력
+st.subheader("당신의 베팅")
+bet_target = st.radio("베팅 대상", ['Player', 'Banker', 'Tie', 'Player Pair', 'Banker Pair'])
+bet_amount = st.number_input("베팅 금액", 10000, st.session_state.user_money, step=10000)
 
-# 베팅 입력
-bet_main = st.selectbox("주 베팅", ["Player", "Banker", "Tie"])
-bet_player_pair = st.checkbox("Player Pair")
-bet_banker_pair = st.checkbox("Banker Pair")
-submit = st.button("베팅 후 다음 라운드 진행")
-
-if submit:
-    user_bet = {
-        "main": bet_main,
-        "tie": bet_main == "Tie",
-        "player_pair": bet_player_pair,
-        "banker_pair": bet_banker_pair
-    }
-
-    ai_bet_list = ai_bets(st.session_state.last_result)
-    result = play_round(st.session_state.deck, user_bet, ai_bet_list, st.session_state.ai_profits, st.session_state.last_result)
-
-    if result:
-        round_data, new_result = result
-        st.session_state.history.append(round_data)
-        st.session_state.user_money += round_data['User 수익']
-        st.session_state.last_result = new_result
+# 게임 진행
+if st.button("게임 시작"):
+    result = simulate_round(st.session_state.deck)
+    if result is None:
+        st.warning("카드가 부족해 게임 종료됩니다. 다시 시작해주세요.")
     else:
-        st.warning("카드가 부족하여 게임이 종료됩니다.")
+        payout = 0
+        # 사용자 수익 처리
+        if bet_target == result['winner']:
+            if bet_target == 'Tie':
+                payout = bet_amount * 8
+            else:
+                payout = bet_amount * (0.95 if bet_target == 'Banker' else 1)
+        elif bet_target == 'Player Pair' and result['pair_player']:
+            payout = bet_amount * 11
+        elif bet_target == 'Banker Pair' and result['pair_banker']:
+            payout = bet_amount * 11
+        else:
+            payout = -bet_amount
 
-# 결과 테이블
-if st.session_state.history:
-    st.subheader("게임 결과")
-    df = pd.DataFrame(st.session_state.history)
-    st.dataframe(df[::-1])
+        st.session_state.user_money += payout
 
-# AI 수익 테이블
-st.subheader("AI 개별 수익 (상위 10명)")
-ai_df = pd.DataFrame({
-    "AI ID": [f"AI_{i+1}" for i in range(500)],
-    "수익": st.session_state.ai_profits
-})
-top10 = ai_df.sort_values(by="수익", ascending=False).head(10)
-st.table(top10.reset_index(drop=True))
+        # AI 베팅 및 수익 처리
+        for i in range(NUM_AI):
+            ai_bet = random.choice(['Player']*4 + ['Banker']*4 + ['Tie'] + ['Player Pair', 'Banker Pair'])  # Pair 몰림 방지
+            ai_amount = 10_000
+            ai_gain = 0
+            if ai_bet == result['winner']:
+                if ai_bet == 'Tie':
+                    ai_gain = ai_amount * 8
+                else:
+                    ai_gain = ai_amount * (0.95 if ai_bet == 'Banker' else 1)
+            elif ai_bet == 'Player Pair' and result['pair_player']:
+                ai_gain = ai_amount * 11
+            elif ai_bet == 'Banker Pair' and result['pair_banker']:
+                ai_gain = ai_amount * 11
+            else:
+                ai_gain = -ai_amount
+            st.session_state.ai_money[i] += ai_gain
+
+        # 결과 기록
+        st.session_state.logs.append({
+            'Player': result['player'],
+            'Banker': result['banker'],
+            'Winner': result['winner'],
+            'P_Total': result['player_total'],
+            'B_Total': result['banker_total'],
+            'UserMoney': st.session_state.user_money,
+        })
+
+        st.success(f"결과: {result['winner']} 승! 당신의 현재 자금: {st.session_state.user_money:,.0f}원")
+
+# 게임 로그 출력
+if st.session_state.logs:
+    st.subheader("게임 기록")
+    df = pd.DataFrame(st.session_state.logs)
+    st.dataframe(df.tail(10), use_container_width=True)
+
+# AI 수익 요약
+ai_df = pd.DataFrame({'AI': range(NUM_AI), 'Balance': st.session_state.ai_money})
+st.subheader("AI 수익 상위 TOP 10")
+st.dataframe(ai_df.sort_values('Balance', ascending=False).head(10), use_container_width=True)
